@@ -1,0 +1,20 @@
+# CoAP Demo - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# CoAP protocol (server + client + multicast support)
+aiocoap
+
+# HTTP server for Module A benchmark comparison
+aiohttp
+
+# Low-level packet inspection and size measurement
+scapy
+
+# Data handling and CSV export
+pandas
+
+# Chart generation (latency, packet size, degradation plots)
+matplotlib
+
+# Nicer charts (optional but recommended)
+seaborn
