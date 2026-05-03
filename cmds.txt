@@ -1,3 +1,8 @@
+[SETUP]
+	notepad $env:USERPROFILE\.wslconfig
+		[wsl2]
+		networkingMode=mirrored
+
 [COMMON]
 	wsl
 	source venv_wsl/bin/activate
