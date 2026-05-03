@@ -77,11 +77,15 @@ async def run_coap_benchmark(
             rtt_ms: float = round((time.perf_counter() - start) * 1000, 3)
             payload_bytes: int = len(response.payload)
 
-            # Use encode() to get the full on-wire message length (header +
-            # options + payload), then subtract payload to isolate overhead.
-            encoded: bytes = response.encode()
-            header_bytes: int = len(encoded) - payload_bytes
-            total_bytes: int = len(encoded)
+            # Approximate on-wire CoAP size:
+            #   4 bytes fixed header + token + option TLVs + payload marker
+            options_size: int = sum(
+                1 + len(opt.encode())
+                for opt in response.opt.option_list()
+            )
+            payload_marker: int = 1 if payload_bytes > 0 else 0
+            header_bytes: int = 4 + len(response.token) + options_size + payload_marker
+            total_bytes: int = header_bytes + payload_bytes
 
             records.append({
                 'protocol':      'CoAP',
