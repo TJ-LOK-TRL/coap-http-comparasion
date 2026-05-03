@@ -14,6 +14,14 @@ Usage:
                             --no-start-local-servers
     With payload sweep:
         python benchmark.py --payload-sweep
+
+    With payload sweep and two PCs:
+        python module_a_benchmark/benchmark.py \
+            --coap-uri coap://192.168.1.247:5683/sensor \
+            --http-uri http://192.168.1.247:8080/sensor \
+            --no-start-local-servers \
+            --requests 100 \
+            --payload-sweep
 """
 
 import asyncio
