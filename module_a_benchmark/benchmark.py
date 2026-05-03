@@ -220,6 +220,36 @@ def start_servers() -> list[subprocess.Popen[str]]:
     return processes
 
 
+# ── Warmup/ping ───────────────────────────────────────────────────────────────
+
+async def _coap_ping(coap_uri: str) -> bool:
+    """Send a single CoAP GET to verify the server is reachable before benchmarking."""
+    context: aiocoap.Context = await aiocoap.Context.create_client_context()
+    try:
+        request = aiocoap.Message(code=aiocoap.GET, uri=coap_uri)
+        await asyncio.wait_for(context.request(request).response, timeout=3.0)
+        return True
+    except Exception as exc:
+        print(f'[CoAP] ✗ Server unreachable: {exc}')
+        return False
+    finally:
+        await context.shutdown()
+
+
+async def _http_ping(http_uri: str) -> bool:
+    """Send a single HTTP GET to verify the server is reachable before benchmarking."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                http_uri,
+                timeout=aiohttp.ClientTimeout(total=3.0)
+            ) as response:
+                await response.read()
+        return True
+    except Exception as exc:
+        print(f'[HTTP] ✗ Server unreachable: {exc}')
+        return False
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main(n_requests: int, coap_uri: str, http_uri: str, start_local: bool) -> None:
@@ -240,6 +270,17 @@ async def main(n_requests: int, coap_uri: str, http_uri: str, start_local: bool)
         print(f'  [INFO] Skipping local server startup.')
         print(f'  [INFO] CoAP target: {coap_uri}')
         print(f'  [INFO] HTTP target: {http_uri}\n')
+
+    print('  Checking server connectivity...')
+    coap_ok = await _coap_ping(coap_uri)
+    http_ok  = await _http_ping(http_uri)
+    if not coap_ok or not http_ok:
+        print('\n  ✗ Aborting — one or more servers are unreachable.')
+        if processes:
+            for proc in processes:
+                proc.terminate()
+        return
+    print('  ✓ Both servers reachable. Starting benchmark...\n')
 
     coap_records: list[BenchmarkRecord] = await run_coap_benchmark(n_requests, coap_uri)
     http_records: list[BenchmarkRecord] = await run_http_benchmark(n_requests, http_uri)
