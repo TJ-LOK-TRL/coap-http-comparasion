@@ -1,0 +1,12 @@
+[COMMON]
+	wsl
+	source venv_wsl/bin/activate
+
+[MODULE_A]
+	[PC_1]
+		[TERMINAL_1]
+			python module_a_benchmark/coap_server.py --port 5683
+		[TERMINAL_2]
+			python module_a_benchmark/http_server.py --port 8080
+	[PC_2]
+		
