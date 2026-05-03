@@ -1,0 +1,29 @@
+(venv_wsl) root@DESKTOP-QO7PLFA:/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion# python module_a_benchmark/benchmark.py --coap-uri coap://192.168.1.247:5683/sensor --http-uri http://192.168.1.247:8080/sensor --no-start-local-servers --requests 100
+
+=======================================================
+  MODULE A — CoAP vs HTTP Benchmark
+=======================================================
+
+  [INFO] Skipping local server startup.
+  [INFO] CoAP target: coap://192.168.1.247:5683/sensor
+  [INFO] HTTP target: http://192.168.1.247:8080/sensor
+
+  Checking server connectivity...
+  ✓ Both servers reachable. Starting benchmark...
+
+[CoAP] Sending 100 requests (sensor) to coap://192.168.1.247:5683/sensor...
+[CoAP] Done. 100/100 successful.
+[HTTP] Sending 100 requests (sensor) to http://192.168.1.247:8080/sensor...
+[HTTP] Done. 100/100 successful.
+
+================================================================================
+  BENCHMARK SUMMARY — Sensor payload
+================================================================================
+  Protocol   Avg RTT (ms)     Std Dev (ms)     Jitter (ms)    Avg Total (B)
+--------------------------------------------------------------------------------
+  CoAP       8.709            3.926            2.37           127.0
+  HTTP       7.459            1.813            1.291          278.0
+================================================================================
+
+[CSV] Saved: /mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/../results/benchmark_results.csv
+  Done. Run plot_results.py to generate charts.
