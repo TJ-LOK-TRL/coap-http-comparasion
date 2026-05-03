@@ -47,7 +47,7 @@ STARTUP_WAIT: float = 2.0
 #   - Above UDP MTU: CoAP requires block-wise transfer (RFC 7959); results
 #     are intentionally kept separate so the report can discuss the boundary.
 SWEEP_SIZES_NO_FRAG:   list[int] = [64, 256, 512, 1024]
-SWEEP_SIZES_WITH_FRAG: list[int] = [2048, 4096, 8192]
+SWEEP_SIZES_WITH_FRAG: list[int] = [2048, 4096, 8192, 16384, 65536]
 SWEEP_SIZES: list[int] = SWEEP_SIZES_NO_FRAG + SWEEP_SIZES_WITH_FRAG
 
 
