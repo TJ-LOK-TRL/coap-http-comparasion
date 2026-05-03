@@ -6,6 +6,7 @@ Serves identical sensor data as the HTTP server for fair comparison.
 
 Usage:
     python coap_server.py --port 5683
+    python coap_server.py --port 5683 --host 0.0.0.0   # aceita ligações externas
 """
 
 import asyncio
@@ -35,24 +36,25 @@ class SensorResource(resource.Resource):
     """Returns JSON sensor data on GET."""
 
     def get_link_description(self) -> dict[str, Any]:
-        """Advertise resource type in .well-known/core."""
         desc: dict[str, Any] = super().get_link_description()
         desc['rt'] = 'sensor.combined'
-        desc['ct'] = '50'  # application/json
+        desc['ct'] = '50'
         return desc
 
     async def render_get(self, request: aiocoap.Message) -> aiocoap.Message:
+        client = getattr(request.remote, 'hostinfo', str(request.remote))
+        print(f'[CoAP] ← GET /sensor from {client}', flush=True)
+
         payload: bytes = json.dumps(SENSOR_PAYLOAD).encode('utf-8')
         return aiocoap.Message(
             payload=payload,
-            content_format=50,  # application/json
+            content_format=50,
         )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main(port: int) -> None:
-    """Start the CoAP benchmark server on the given port."""
+async def main(host: str, port: int) -> None:
     root: resource.Site = resource.Site()
 
     root.add_resource(
@@ -61,15 +63,19 @@ async def main(port: int) -> None:
     )
     root.add_resource(['sensor'], SensorResource())
 
-    print(f'[CoAP] Benchmark server listening on coap://127.0.0.1:{port}/sensor')
+    await aiocoap.Context.create_server_context(root, bind=(host, port))
 
-    await aiocoap.Context.create_server_context(root, bind=('127.0.0.1', port))
+    print(f'[CoAP] Listening on coap://{host}:{port}/sensor', flush=True)
+    print(f'[CoAP] Waiting for requests...', flush=True)
+
     await asyncio.get_event_loop().create_future()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CoAP Benchmark Server')
-    parser.add_argument('--port', type=int, default=5683, help='UDP port to listen on')
+    parser.add_argument('--port', type=int, default=5683)
+    parser.add_argument('--host', type=str, default='127.0.0.1',
+                        help='Bind address (use 0.0.0.0 to accept external connections)')
     args = parser.parse_args()
 
-    asyncio.run(main(args.port))
+    asyncio.run(main(args.host, args.port))

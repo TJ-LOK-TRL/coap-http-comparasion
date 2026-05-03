@@ -6,6 +6,7 @@ Serves identical sensor data as the CoAP server for fair comparison.
 
 Usage:
     python http_server.py --port 8080
+    python http_server.py --port 8080 --host 0.0.0.0   # aceita ligações externas
 """
 
 import argparse
@@ -30,7 +31,9 @@ SENSOR_PAYLOAD: dict[str, Any] = {
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 async def handle_sensor(request: web.Request) -> web.Response:
-    """Return JSON sensor data on GET /sensor."""
+    client = request.remote
+    print(f'[HTTP] ← GET /sensor from {client}', flush=True)
+
     return web.Response(
         text=json.dumps(SENSOR_PAYLOAD),
         content_type='application/json',
@@ -40,22 +43,23 @@ async def handle_sensor(request: web.Request) -> web.Response:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def build_app() -> web.Application:
-    """Create and configure the aiohttp application."""
     app: web.Application = web.Application()
     app.router.add_get('/sensor', handle_sensor)
     return app
 
 
-def main(port: int) -> None:
-    """Start the HTTP benchmark server on the given port."""
-    print(f'[HTTP] Benchmark server listening on http://127.0.0.1:{port}/sensor')
+def main(host: str, port: int) -> None:
+    print(f'[HTTP] Listening on http://{host}:{port}/sensor', flush=True)
+    print(f'[HTTP] Waiting for requests...', flush=True)
     app: web.Application = build_app()
-    web.run_app(app, host='127.0.0.1', port=port, print=None)
+    web.run_app(app, host=host, port=port, print=None)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='HTTP Benchmark Server')
-    parser.add_argument('--port', type=int, default=8080, help='TCP port to listen on')
+    parser.add_argument('--port', type=int, default=8080)
+    parser.add_argument('--host', type=str, default='127.0.0.1',
+                        help='Bind address (use 0.0.0.0 to accept external connections)')
     args = parser.parse_args()
 
-    main(args.port)
+    main(args.host, args.port)
