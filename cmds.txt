@@ -5,8 +5,10 @@
 [MODULE_A]
 	[PC_1]
 		[TERMINAL_1]
-			python module_a_benchmark/coap_server.py --port 5683
+			python module_a_benchmark/coap_server.py --port 5683 --host 0.0.0.0
 		[TERMINAL_2]
-			python module_a_benchmark/http_server.py --port 8080
+			python module_a_benchmark/http_server.py --port 8080 --host 0.0.0.0
 	[PC_2]
-		
+		python module_a_benchmark/benchmark.py --coap-uri coap://192.168.1.247:5683/sensor --http-uri http://192.168.1.247:5683/sensor --no-start-local-servers --requests 100
+
+# 192.168.1.247
