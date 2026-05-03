@@ -6,6 +6,7 @@ Reads results/benchmark_results.csv and generates:
   - results/latency_chart.png       (avg RTT per protocol)
   - results/packetsize_chart.png    (avg total bytes per protocol)
   - results/rtt_distribution.png   (RTT distribution box plot)
+  - results/jitter_chart.png        (jitter per protocol)
 
 Usage:
     python plot_results.py
@@ -48,6 +49,13 @@ def save(fig: plt.Figure, filename: str) -> None:
     fig.savefig(path, dpi=150, bbox_inches='tight')
     print(f'  Saved: {path}')
     plt.close(fig)
+
+
+def calc_jitter(rtts: list[float]) -> float:
+    """Mean absolute difference between consecutive RTTs (RFC 3550)."""
+    if len(rtts) < 2:
+        return 0.0
+    return sum(abs(rtts[i] - rtts[i - 1]) for i in range(1, len(rtts))) / (len(rtts) - 1)
 
 
 # ── Charts ────────────────────────────────────────────────────────────────────
@@ -133,11 +141,13 @@ def plot_rtt_distribution(df: pd.DataFrame) -> None:
         data=df,
         x='protocol',
         y='rtt_ms',
+        hue='protocol',
         order=PROTOCOL_ORDER,
         palette=palette,
         width=0.4,
         linewidth=1.2,
         flierprops={'marker': 'o', 'markersize': 3, 'alpha': 0.5},
+        legend=False,
         ax=ax,
     )
 
@@ -150,6 +160,116 @@ def plot_rtt_distribution(df: pd.DataFrame) -> None:
     fig.tight_layout()
     save(fig, 'rtt_distribution.png')
 
+
+def plot_jitter(df: pd.DataFrame) -> None:
+    """Bar chart: jitter (mean consecutive RTT delta) per protocol."""
+    jitter_values: list[float] = [
+        calc_jitter(df[df['protocol'] == proto]['rtt_ms'].tolist())
+        for proto in PROTOCOL_ORDER
+    ]
+
+    colours: list[str] = [COLOUR_COAP, COLOUR_HTTP]
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    bars = ax.bar(PROTOCOL_ORDER, jitter_values, color=colours, width=0.45, zorder=3)
+
+    for bar, val in zip(bars, jitter_values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.02,
+            f'{val:.3f} ms',
+            ha='center', va='bottom', fontsize=10, fontweight='bold',
+        )
+
+    ax.set_title('Jitter: CoAP vs HTTP', fontsize=13, fontweight='bold', pad=12)
+    ax.set_ylabel('Jitter (ms)')
+    ax.set_xlabel('Protocol')
+    ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
+    ax.grid(axis='y', linestyle='--', alpha=0.5, zorder=0)
+    ax.set_axisbelow(True)
+
+    fig.tight_layout()
+    save(fig, 'jitter_chart.png')
+
+# ── Sweep charts ──────────────────────────────────────────────────────────────
+
+def load_sweep_summary() -> pd.DataFrame | None:
+    """Load payload sweep summary CSV if it exists."""
+    path = os.path.join(RESULTS_DIR, 'payload_sweep', 'summary.csv')
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df['payload_size'] = df['payload_size'].astype(int)
+    df['avg_rtt_ms']   = df['avg_rtt_ms'].astype(float)
+    df['jitter_ms']    = df['jitter_ms'].astype(float)
+    return df
+
+
+def plot_sweep_rtt(df: pd.DataFrame) -> None:
+    """Line chart: avg RTT vs payload size for CoAP and HTTP."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for proto, colour in [('CoAP', COLOUR_COAP), ('HTTP', COLOUR_HTTP)]:
+        sub = df[df['protocol'] == proto].sort_values('payload_size')
+        ax.plot(sub['payload_size'], sub['avg_rtt_ms'],
+                marker='o', label=proto, color=colour, linewidth=2)
+        for _, row in sub.iterrows():
+            ax.annotate(
+                f'{row["avg_rtt_ms"]:.1f}',
+                (row['payload_size'], row['avg_rtt_ms']),
+                textcoords='offset points', xytext=(0, 7),
+                ha='center', fontsize=8,
+            )
+
+    ax.set_xscale('log')
+    ax.set_title('Avg RTT vs Payload Size: CoAP vs HTTP',
+                 fontsize=13, fontweight='bold', pad=12)
+    ax.set_xlabel('Payload Size (bytes, log scale)')
+    ax.set_ylabel('Average RTT (ms)')
+    ax.legend()
+    ax.grid(axis='both', linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
+
+    # human-readable x-axis labels
+    sizes = sorted(df['payload_size'].unique())
+    ax.set_xticks(sizes)
+    ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
+
+    fig.tight_layout()
+    save(fig, 'payload_sweep_rtt.png')
+
+
+def plot_sweep_jitter(df: pd.DataFrame) -> None:
+    """Line chart: jitter vs payload size for CoAP and HTTP."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for proto, colour in [('CoAP', COLOUR_COAP), ('HTTP', COLOUR_HTTP)]:
+        sub = df[df['protocol'] == proto].sort_values('payload_size')
+        ax.plot(sub['payload_size'], sub['jitter_ms'],
+                marker='s', label=proto, color=colour, linewidth=2, linestyle='--')
+
+    ax.set_xscale('log')
+    ax.set_title('Jitter vs Payload Size: CoAP vs HTTP',
+                 fontsize=13, fontweight='bold', pad=12)
+    ax.set_xlabel('Payload Size (bytes, log scale)')
+    ax.set_ylabel('Jitter (ms)')
+    ax.legend()
+    ax.grid(axis='both', linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
+
+    sizes = sorted(df['payload_size'].unique())
+    ax.set_xticks(sizes)
+    ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
+
+    fig.tight_layout()
+    save(fig, 'payload_sweep_jitter.png')
+
+
+def _fmt_bytes(n: int) -> str:
+    """Human-readable byte size label."""
+    if n >= 1024:
+        return f'{n // 1024}KB'
+    return f'{n}B'
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -171,6 +291,15 @@ def main() -> None:
     plot_latency(df)
     plot_packet_size(df)
     plot_rtt_distribution(df)
+    plot_jitter(df)
+
+    sweep_df = load_sweep_summary()
+    if sweep_df is not None:
+        print('  Sweep summary found — generating sweep charts...')
+        plot_sweep_rtt(sweep_df)
+        plot_sweep_jitter(sweep_df)
+    else:
+        print('  (No payload sweep data found — skipping sweep charts.)')
 
     print()
     print('All charts saved to results/')

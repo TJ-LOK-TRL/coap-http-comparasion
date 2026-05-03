@@ -2,15 +2,19 @@
 
 """
 Module A — HTTP Benchmark Server
-Serves identical sensor data as the CoAP server for fair comparison.
+
+Endpoints:
+    /sensor          → real JSON sensor payload (fixed)
+    /data?size=<n>   → synthetic payload of exactly n bytes
 
 Usage:
     python http_server.py --port 8080
-    python http_server.py --port 8080 --host 0.0.0.0   # aceita ligações externas
+    python http_server.py --port 8080 --host 0.0.0.0
 """
 
 import argparse
 import json
+import os
 from typing import Any
 
 from aiohttp import web
@@ -31,13 +35,28 @@ SENSOR_PAYLOAD: dict[str, Any] = {
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 async def handle_sensor(request: web.Request) -> web.Response:
-    client = request.remote
-    print(f'[HTTP] ← GET /sensor from {client}', flush=True)
-
+    """Return fixed JSON sensor data on GET /sensor."""
+    print(f'[HTTP] ← GET /sensor from {request.remote}', flush=True)
     return web.Response(
         text=json.dumps(SENSOR_PAYLOAD),
         content_type='application/json',
     )
+
+
+async def handle_data(request: web.Request) -> web.Response:
+    """Return a synthetic payload of exactly n bytes on GET /data?size=<n>.
+
+    Uses b'x' * size (not os.urandom) to guarantee the payload is exactly
+    size bytes without any encoding or JSON overhead.
+    """
+    try:
+        size = int(request.rel_url.query.get('size', 64))
+    except ValueError:
+        size = 64
+
+    print(f'[HTTP] ← GET /data?size={size} from {request.remote}', flush=True)
+    payload: bytes = b'x' * size  # pure fixed bytes — no encoding overhead
+    return web.Response(body=payload, content_type='application/octet-stream')
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -45,11 +64,14 @@ async def handle_sensor(request: web.Request) -> web.Response:
 def build_app() -> web.Application:
     app: web.Application = web.Application()
     app.router.add_get('/sensor', handle_sensor)
+    app.router.add_get('/data',   handle_data)
     return app
 
 
 def main(host: str, port: int) -> None:
-    print(f'[HTTP] Listening on http://{host}:{port}/sensor', flush=True)
+    print(f'[HTTP] Listening on http://{host}:{port}', flush=True)
+    print(f'[HTTP]   /sensor        → fixed JSON sensor payload', flush=True)
+    print(f'[HTTP]   /data?size=N   → synthetic N-byte payload', flush=True)
     print(f'[HTTP] Waiting for requests...', flush=True)
     app: web.Application = build_app()
     web.run_app(app, host=host, port=port, print=None)
