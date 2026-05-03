@@ -1,0 +1,49 @@
+(venv_wsl) root@DESKTOP-QO7PLFA:/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion# python module_a_benchmark/benchmark.py --coap-uri coap://192.168.1.247:5683/sensor --http-uri http://192.168.1.247:8080/sensor --no-start-local-servers --requests 100
+
+=======================================================
+  MODULE A — CoAP vs HTTP Benchmark
+=======================================================
+
+  [INFO] Skipping local server startup.
+  [INFO] CoAP target: coap://192.168.1.247:5683/sensor
+  [INFO] HTTP target: http://192.168.1.247:8080/sensor
+
+  Checking server connectivity...
+  ✓ Both servers reachable. Starting benchmark...
+
+[CoAP] Sending 100 requests to coap://192.168.1.247:5683/sensor...
+[CoAP] Done. 100/100 successful.
+[HTTP] Sending 100 requests to http://192.168.1.247:8080/sensor...
+[HTTP] Done. 100/100 successful.
+
+================================================================================
+  BENCHMARK SUMMARY
+================================================================================
+  Protocol   Avg RTT (ms)     Std Dev (ms)     Jitter (ms)    Avg Total (B)
+--------------------------------------------------------------------------------
+  CoAP       10.902           4.769            2.569          124.0
+  HTTP       12.83            41.301           6.207          293.0
+================================================================================
+
+
+[CSV] Results saved to /mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/../results/benchmark_results.csv
+  Done. Run plot_results.py to generate charts.
+
+(venv_wsl) root@DESKTOP-QO7PLFA:/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion# python plot_results.py
+python: can't open file '/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/plot_results.py': [Errno 2] No such file or directory
+(venv_wsl) root@DESKTOP-QO7PLFA:/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion# python module_a_benchmark/plot_results.py
+
+Generating benchmark charts...
+
+  Saved: /mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/../results/latency_chart.png
+  Saved: /mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/../results/packetsize_chart.png
+/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/plot_results.py:132: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  sns.boxplot(
+  Saved: /mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion/module_a_benchmark/../results/rtt_distribution.png
+
+All charts saved to results/
+
+(venv_wsl) root@DESKTOP-QO7PLFA:/mnt/d/IPL/mestrado/coap-http-project/coap-http-comparasion# 

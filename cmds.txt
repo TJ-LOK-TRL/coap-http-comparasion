@@ -14,6 +14,6 @@
 		[TERMINAL_2]
 			python module_a_benchmark/http_server.py --port 8080 --host 0.0.0.0
 	[PC_2]
-		python module_a_benchmark/benchmark.py --coap-uri coap://192.168.1.247:5683/sensor --http-uri http://192.168.1.247:5683/sensor --no-start-local-servers --requests 100
+		python module_a_benchmark/benchmark.py --coap-uri coap://192.168.1.247:5683/sensor --http-uri http://192.168.1.247:8080/sensor --no-start-local-servers --requests 100
 
 # 192.168.1.247
