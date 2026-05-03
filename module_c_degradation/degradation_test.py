@@ -179,18 +179,31 @@ def save_csv(records: list[DegradationRecord]) -> None:
 
 
 def print_summary(records: list[DegradationRecord], n: int) -> None:
-    """Print success rate table per loss level and message type."""
+    """Print success rate + avg RTT + std dev per loss level and message type."""
     print()
-    print('=' * 58)
+    print('=' * 78)
     print('  DEGRADATION SUMMARY (real tc netem packet loss)')
-    print('=' * 58)
-    print(f'  {"Loss %":<10} {"CON success":<18} {"NON success"}')
-    print('-' * 58)
+    print('=' * 78)
+    print(f'  {"Loss %":<8} {"CON ok":<10} {"CON RTT avg":<15} {"CON RTT std":<15} {"NON ok":<10} {"NON RTT avg":<15} {"NON RTT std"}')
+    print('-' * 78)
+
     for loss_pct in [int(l * 100) for l in LOSS_LEVELS]:
-        con_ok: int = sum(1 for r in records if r['msg_type'] == 'CON' and r['loss_pct'] == loss_pct and r['success'] == 1)
-        non_ok: int = sum(1 for r in records if r['msg_type'] == 'NON' and r['loss_pct'] == loss_pct and r['success'] == 1)
-        print(f'  {loss_pct:<10} {con_ok}/{n:<15} {non_ok}/{n}')
-    print('=' * 58)
+        for msg_type in ['CON', 'NON']:
+            subset = [
+                r for r in records
+                if r['msg_type'] == msg_type and r['loss_pct'] == loss_pct
+            ]
+            ok_rtts = [float(r['rtt_ms']) for r in subset if r['success'] == 1]
+            ok_count = len(ok_rtts)
+            avg_rtt = round(sum(ok_rtts) / ok_count, 1) if ok_rtts else -1
+            std_rtt = round((sum((x - avg_rtt) ** 2 for x in ok_rtts) / ok_count) ** 0.5, 1) if len(ok_rtts) > 1 else 0.0
+
+            if msg_type == 'CON':
+                con_ok, con_avg, con_std = ok_count, avg_rtt, std_rtt
+            else:
+                print(f'  {loss_pct:<8} {con_ok}/{n:<8} {con_avg:<15} {con_std:<15} {ok_count}/{n:<8} {avg_rtt:<15} {std_rtt}')
+
+    print('=' * 78)
     print()
 
 

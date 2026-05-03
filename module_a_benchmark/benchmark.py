@@ -6,7 +6,12 @@ Measures latency (RTT) and response payload size for both protocols.
 Saves results to results/benchmark_results.csv.
 
 Usage:
-    python benchmark.py --requests 100
+    Local:
+        python benchmark.py --requests 100
+    Two PCs:
+        python benchmark.py --coap-uri coap://192.168.1.10:5683/sensor \
+                            --http-uri http://192.168.1.10:8080/sensor \
+                            --no-start-local-servers
 """
 
 import asyncio
@@ -27,8 +32,8 @@ BenchmarkRecord = dict[str, str | float | int]
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-COAP_URI: str = 'coap://127.0.0.1:5683/sensor'
-HTTP_URI: str = 'http://127.0.0.1:8080/sensor'
+DEFAULT_COAP_URI: str = 'coap://127.0.0.1:5683/sensor'
+DEFAULT_HTTP_URI: str = 'http://127.0.0.1:8080/sensor'
 RESULTS_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'results')
 RESULTS_CSV: str = os.path.join(RESULTS_DIR, 'benchmark_results.csv')
 
@@ -37,15 +42,15 @@ STARTUP_WAIT: float = 2.0
 
 # ── CoAP benchmark ────────────────────────────────────────────────────────────
 
-async def run_coap_benchmark(n: int) -> list[BenchmarkRecord]:
+async def run_coap_benchmark(n: int, coap_uri: str) -> list[BenchmarkRecord]:
     """Send n GET requests to the CoAP server and record RTT + payload size."""
     context: aiocoap.Context = await aiocoap.Context.create_client_context()
     records: list[BenchmarkRecord] = []
 
-    print(f'[CoAP] Sending {n} requests to {COAP_URI}...')
+    print(f'[CoAP] Sending {n} requests to {coap_uri}...')
 
     for i in range(n):
-        request: aiocoap.Message = aiocoap.Message(code=aiocoap.GET, uri=COAP_URI)
+        request: aiocoap.Message = aiocoap.Message(code=aiocoap.GET, uri=coap_uri)
         start: float = time.perf_counter()
         try:
             response: aiocoap.Message = await asyncio.wait_for(
@@ -54,7 +59,6 @@ async def run_coap_benchmark(n: int) -> list[BenchmarkRecord]:
             )
             rtt_ms: float = round((time.perf_counter() - start) * 1000, 3)
             payload_bytes: int = len(response.payload)
-            # CoAP header is fixed 4 bytes + token; typical overhead ~8-12 bytes
             header_bytes: int = 4 + len(response.token)
             total_bytes: int = header_bytes + payload_bytes
 
@@ -84,22 +88,21 @@ async def run_coap_benchmark(n: int) -> list[BenchmarkRecord]:
 
 # ── HTTP benchmark ────────────────────────────────────────────────────────────
 
-async def run_http_benchmark(n: int) -> list[BenchmarkRecord]:
+async def run_http_benchmark(n: int, http_uri: str) -> list[BenchmarkRecord]:
     """Send n GET requests to the HTTP server and record RTT + payload size."""
     records: list[BenchmarkRecord] = []
 
-    print(f'[HTTP] Sending {n} requests to {HTTP_URI}...')
+    print(f'[HTTP] Sending {n} requests to {http_uri}...')
 
     async with aiohttp.ClientSession() as session:
         for i in range(n):
             start: float = time.perf_counter()
             try:
-                async with session.get(HTTP_URI) as response:
+                async with session.get(http_uri) as response:
                     body: bytes = await response.read()
                     rtt_ms: float = round((time.perf_counter() - start) * 1000, 3)
 
                     payload_bytes: int = len(body)
-                    # Estimate HTTP header overhead (typical GET response headers ~200-400 bytes)
                     raw_headers: str = str(response.headers)
                     header_bytes: int = len(raw_headers.encode('utf-8'))
                     total_bytes: int = header_bytes + payload_bytes
@@ -142,6 +145,23 @@ def save_csv(records: list[BenchmarkRecord]) -> None:
     print(f'\n[CSV] Results saved to {RESULTS_CSV}')
 
 
+# ── Statistics ────────────────────────────────────────────────────────────────
+
+def calc_std(rtts: list[float]) -> float:
+    """Population standard deviation of RTT values."""
+    if len(rtts) < 2:
+        return 0.0
+    mean = sum(rtts) / len(rtts)
+    return round((sum((x - mean) ** 2 for x in rtts) / len(rtts)) ** 0.5, 3)
+
+
+def calc_jitter(rtts: list[float]) -> float:
+    """Mean absolute difference between consecutive RTTs (RFC 3550 definition)."""
+    if len(rtts) < 2:
+        return 0.0
+    return round(sum(abs(rtts[i] - rtts[i - 1]) for i in range(1, len(rtts))) / (len(rtts) - 1), 3)
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 def print_summary(records: list[BenchmarkRecord]) -> None:
@@ -149,25 +169,27 @@ def print_summary(records: list[BenchmarkRecord]) -> None:
     protocols: list[str] = ['CoAP', 'HTTP']
 
     print()
-    print('=' * 62)
+    print('=' * 80)
     print('  BENCHMARK SUMMARY')
-    print('=' * 62)
-    print(f'  {"Protocol":<10} {"Avg RTT (ms)":<16} {"Avg Payload (B)":<18} {"Avg Total (B)"}')
-    print('-' * 62)
+    print('=' * 80)
+    print(f'  {"Protocol":<10} {"Avg RTT (ms)":<16} {"Std Dev (ms)":<16} {"Jitter (ms)":<14} {"Avg Total (B)"}')
+    print('-' * 80)
 
     for proto in protocols:
         ok_records = [r for r in records if r['protocol'] == proto and r['status'] == 'ok']
         if not ok_records:
-            print(f'  {proto:<10} {"N/A":<16} {"N/A":<18} {"N/A"}')
+            print(f'  {proto:<10} {"N/A":<16} {"N/A":<16} {"N/A":<14} {"N/A"}')
             continue
 
-        avg_rtt:     float = round(sum(float(r['rtt_ms'])        for r in ok_records) / len(ok_records), 3)
-        avg_payload: float = round(sum(float(r['payload_bytes']) for r in ok_records) / len(ok_records), 1)
-        avg_total:   float = round(sum(float(r['total_bytes'])   for r in ok_records) / len(ok_records), 1)
+        rtts: list[float] = [float(r['rtt_ms']) for r in ok_records]
+        avg_rtt:   float = round(sum(rtts) / len(rtts), 3)
+        std_dev:   float = calc_std(rtts)
+        jitter:    float = calc_jitter(rtts)
+        avg_total: float = round(sum(float(r['total_bytes']) for r in ok_records) / len(ok_records), 1)
 
-        print(f'  {proto:<10} {avg_rtt:<16} {avg_payload:<18} {avg_total}')
+        print(f'  {proto:<10} {avg_rtt:<16} {std_dev:<16} {jitter:<14} {avg_total}')
 
-    print('=' * 62)
+    print('=' * 80)
     print()
 
 
@@ -200,7 +222,7 @@ def start_servers() -> list[subprocess.Popen[str]]:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main(n_requests: int) -> None:
+async def main(n_requests: int, coap_uri: str, http_uri: str, start_local: bool) -> None:
     """Run the full CoAP vs HTTP benchmark."""
     print()
     print('=' * 55)
@@ -208,29 +230,51 @@ async def main(n_requests: int) -> None:
     print('=' * 55)
     print()
 
-    processes: list[subprocess.Popen[str]] = start_servers()
+    processes: list[subprocess.Popen[str]] = []
 
-    print(f'\n  Waiting {STARTUP_WAIT}s for servers to initialise...\n')
-    await asyncio.sleep(STARTUP_WAIT)
+    if start_local:
+        processes = start_servers()
+        print(f'\n  Waiting {STARTUP_WAIT}s for servers to initialise...\n')
+        await asyncio.sleep(STARTUP_WAIT)
+    else:
+        print(f'  [INFO] Skipping local server startup.')
+        print(f'  [INFO] CoAP target: {coap_uri}')
+        print(f'  [INFO] HTTP target: {http_uri}\n')
 
-    coap_records: list[BenchmarkRecord] = await run_coap_benchmark(n_requests)
-    http_records: list[BenchmarkRecord] = await run_http_benchmark(n_requests)
+    coap_records: list[BenchmarkRecord] = await run_coap_benchmark(n_requests, coap_uri)
+    http_records: list[BenchmarkRecord] = await run_http_benchmark(n_requests, http_uri)
 
     all_records: list[BenchmarkRecord] = coap_records + http_records
 
     print_summary(all_records)
     save_csv(all_records)
 
-    print('  Shutting down servers...')
-    for proc in processes:
-        proc.terminate()
+    if processes:
+        print('  Shutting down servers...')
+        for proc in processes:
+            proc.terminate()
 
     print('  Done. Run plot_results.py to generate charts.\n')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CoAP vs HTTP Benchmark')
-    parser.add_argument('--requests', type=int, default=100, help='Number of requests per protocol')
+    parser.add_argument('--requests', type=int, default=100,
+                        help='Number of requests per protocol (default: 100)')
+    parser.add_argument('--coap-uri', type=str, default=DEFAULT_COAP_URI,
+                        help=f'CoAP server URI (default: {DEFAULT_COAP_URI})')
+    parser.add_argument('--http-uri', type=str, default=DEFAULT_HTTP_URI,
+                        help=f'HTTP server URI (default: {DEFAULT_HTTP_URI})')
+    parser.add_argument('--start-local-servers', dest='start_local',
+                        action=argparse.BooleanOptionalAction, default=True,
+                        help='Start local servers before benchmarking (default: True). '
+                             'Use --no-start-local-servers for two-PC mode.')
+
     args = parser.parse_args()
 
-    asyncio.run(main(args.requests))
+    asyncio.run(main(
+        n_requests=args.requests,
+        coap_uri=args.coap_uri,
+        http_uri=args.http_uri,
+        start_local=args.start_local,
+    ))

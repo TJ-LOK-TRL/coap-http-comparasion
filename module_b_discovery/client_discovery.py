@@ -17,10 +17,12 @@ Usage:
 
 import asyncio
 import argparse
+import os
 import socket
 import struct
 import time
 from typing import Any
+import csv
 
 import aiocoap
 import aiocoap.resource as resource
@@ -37,6 +39,8 @@ _AIOCOAP_META_PREFIXES: tuple[str, ...] = (
     'https://christian.amsuess.com',
 )
 
+RESULTS_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'results')
+RESULTS_CSV: str = os.path.join(RESULTS_DIR, 'discovery_results.csv')
 
 # ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -181,30 +185,76 @@ class MulticastDiscovery:
         return self._results
 
 
+# ── CSV ───────────────────────────────────────────────────────────────────────
+
+def save_discovery_csv(results: list[DiscoveryResult]) -> None:
+    """Save discovery results to CSV for analysis."""
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    fields = ['run', 'device_ip', 'rtt_ms', 'n_resources', 'raw_size_bytes']
+    with open(RESULTS_CSV, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for run_idx, result in enumerate(results):
+            writer.writerow({
+                'run':            run_idx + 1,
+                'device_ip':      result['remote_ip'],
+                'rtt_ms':         result['rtt_ms'],
+                'n_resources':    len(result['resources']),
+                'raw_size_bytes': len(result['raw'].encode('utf-8')),
+            })
+    print(f'[CSV] Discovery results saved to {RESULTS_CSV}')
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main(local_ip: str) -> None:
-    """Run multicast CoAP discovery and print results."""
+async def main(local_ip: str, n_runs: int = 30) -> None:
+    """Run multicast CoAP discovery N times and print aggregated results."""
+    import statistics
+
     print()
     print('CoAP Multicast Discovery Client')
-    print(f'Local interface: {local_ip}')
+    print(f'Local interface : {local_ip}')
+    print(f'Runs            : {n_runs}')
     print()
 
-    discovery: MulticastDiscovery = MulticastDiscovery(local_ip)
-    results: list[DiscoveryResult] = await discovery.run()
+    all_results: list[DiscoveryResult] = []
 
-    if not results:
-        print('  No devices responded to multicast discovery.')
-        print('  Make sure servers are running and have joined the multicast group.')
+    for i in range(n_runs):
+        print(f'  Run {i + 1}/{n_runs}')
+        discovery = MulticastDiscovery(local_ip)
+        results = await discovery.run()
+        all_results.extend(results)
+        await asyncio.sleep(0.2)  # brief pause between runs
+
+    if not all_results:
+        print('  No devices responded.')
         return
 
-    format_table(results)
+    format_table(all_results[:3])  # print first run only to avoid wall of text
+
+    # Aggregate stats
+    rtts = [r['rtt_ms'] for r in all_results]
+    avg  = round(sum(rtts) / len(rtts), 2)
+    std  = round(statistics.stdev(rtts), 2) if len(rtts) > 1 else 0.0
+    jit  = round(sum(abs(rtts[i] - rtts[i-1]) for i in range(1, len(rtts))) / (len(rtts) - 1), 2) if len(rtts) > 1 else 0.0
+
+    print('=' * 50)
+    print('  DISCOVERY LATENCY SUMMARY')
+    print('=' * 50)
+    print(f'  Total responses : {len(all_results)}')
+    print(f'  Avg RTT         : {avg} ms')
+    print(f'  Std Dev         : {std} ms')
+    print(f'  Jitter          : {jit} ms')
+    print(f'  Min / Max       : {min(rtts)} / {max(rtts)} ms')
+    print('=' * 50)
+
+    save_discovery_csv(all_results)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CoAP Multicast Discovery Client')
     parser.add_argument('--interface', type=str, default='192.168.100.1',
                         help='Local IP to send multicast from (default: 192.168.100.1)')
+    parser.add_argument('--runs', type=int, default=30, help='Number of discovery iterations (default: 30)')
     args = parser.parse_args()
 
-    asyncio.run(main(args.interface))
+    asyncio.run(main(args.interface, args.runs))
