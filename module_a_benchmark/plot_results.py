@@ -3,10 +3,16 @@
 """
 Module A — Plot Benchmark Results
 Reads results/benchmark_results.csv and generates:
-  - results/latency_chart.png       (avg RTT per protocol)
-  - results/packetsize_chart.png    (avg total bytes per protocol)
-  - results/rtt_distribution.png   (RTT distribution box plot)
-  - results/jitter_chart.png        (jitter per protocol)
+  - results/latency_chart.png         (avg RTT per protocol)
+  - results/packetsize_chart.png      (avg total bytes per protocol)
+  - results/rtt_distribution.png      (RTT distribution box plot)
+  - results/jitter_chart.png          (jitter per protocol)
+
+If payload sweep data exists (results/payload_sweep/summary.csv):
+  - results/payload_sweep_rtt.png     (avg RTT vs payload size, with error bars + frag boundary)
+  - results/payload_sweep_jitter.png  (jitter vs payload size)
+  - results/sweep_overhead.png        (header overhead in bytes vs payload size)
+  - results/sweep_crossover.png       (CoAP/HTTP RTT ratio vs payload size)
 
 Usage:
     python plot_results.py
@@ -29,6 +35,9 @@ COLOUR_COAP: str = '#2196F3'   # blue
 COLOUR_HTTP: str = '#FF5722'   # deep orange
 
 PROTOCOL_ORDER: list[str] = ['CoAP', 'HTTP']
+
+# UDP MTU fragmentation boundary (bytes)
+FRAG_BOUNDARY: int = 1500
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -191,6 +200,7 @@ def plot_jitter(df: pd.DataFrame) -> None:
     fig.tight_layout()
     save(fig, 'jitter_chart.png')
 
+
 # ── Sweep charts ──────────────────────────────────────────────────────────────
 
 def load_sweep_summary() -> pd.DataFrame | None:
@@ -201,41 +211,71 @@ def load_sweep_summary() -> pd.DataFrame | None:
     df = pd.read_csv(path)
     df['payload_size'] = df['payload_size'].astype(int)
     df['avg_rtt_ms']   = df['avg_rtt_ms'].astype(float)
+    df['std_dev_ms']   = df['std_dev_ms'].astype(float)
     df['jitter_ms']    = df['jitter_ms'].astype(float)
     return df
 
 
+def _fmt_bytes(n: int) -> str:
+    """Human-readable byte size label."""
+    if n >= 1024:
+        return f'{n // 1024}KB'
+    return f'{n}B'
+
+
+def _add_frag_boundary(ax: plt.Axes, df: pd.DataFrame) -> None:
+    """Draw a vertical dashed line at the UDP MTU fragmentation boundary."""
+    sizes = sorted(df['payload_size'].unique())
+    if any(s < FRAG_BOUNDARY for s in sizes) and any(s >= FRAG_BOUNDARY for s in sizes):
+        ax.axvline(
+            x=FRAG_BOUNDARY, color='grey', linestyle=':', linewidth=1.5, zorder=2,
+        )
+        ax.text(
+            FRAG_BOUNDARY * 1.05, ax.get_ylim()[1] * 0.95,
+            f'UDP MTU\n({FRAG_BOUNDARY}B)',
+            color='grey', fontsize=8, va='top',
+        )
+
+
 def plot_sweep_rtt(df: pd.DataFrame) -> None:
-    """Line chart: avg RTT vs payload size for CoAP and HTTP."""
+    """Line chart: avg RTT ± std dev vs payload size, with fragmentation boundary."""
     fig, ax = plt.subplots(figsize=(8, 5))
 
     for proto, colour in [('CoAP', COLOUR_COAP), ('HTTP', COLOUR_HTTP)]:
         sub = df[df['protocol'] == proto].sort_values('payload_size')
-        ax.plot(sub['payload_size'], sub['avg_rtt_ms'],
-                marker='o', label=proto, color=colour, linewidth=2)
+        ax.errorbar(
+            sub['payload_size'], sub['avg_rtt_ms'],
+            yerr=sub['std_dev_ms'],
+            marker='o', label=proto, color=colour,
+            linewidth=2, capsize=4, elinewidth=1, alpha=0.9,
+        )
         for _, row in sub.iterrows():
             ax.annotate(
                 f'{row["avg_rtt_ms"]:.1f}',
                 (row['payload_size'], row['avg_rtt_ms']),
-                textcoords='offset points', xytext=(0, 7),
+                textcoords='offset points', xytext=(0, 8),
                 ha='center', fontsize=8,
             )
 
     ax.set_xscale('log')
-    ax.set_title('Avg RTT vs Payload Size: CoAP vs HTTP',
-                 fontsize=13, fontweight='bold', pad=12)
-    ax.set_xlabel('Payload Size (bytes, log scale)')
-    ax.set_ylabel('Average RTT (ms)')
-    ax.legend()
-    ax.grid(axis='both', linestyle='--', alpha=0.5)
-    ax.set_axisbelow(True)
-
-    # human-readable x-axis labels
     sizes = sorted(df['payload_size'].unique())
     ax.set_xticks(sizes)
     ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
 
+    # Draw fragmentation boundary after setting x ticks so ylim is stable
+    ax.set_title('Avg RTT vs Payload Size: CoAP vs HTTP',
+                 fontsize=13, fontweight='bold', pad=12)
+    ax.set_xlabel('Payload Size (bytes, log scale)')
+    ax.set_ylabel('Average RTT ± Std Dev (ms)')
+    ax.legend()
+    ax.grid(axis='both', linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
     fig.tight_layout()
+
+    # Add boundary after layout so ylim is finalised
+    ax.autoscale(False)
+    _add_frag_boundary(ax, df)
+
     save(fig, 'payload_sweep_rtt.png')
 
 
@@ -249,6 +289,10 @@ def plot_sweep_jitter(df: pd.DataFrame) -> None:
                 marker='s', label=proto, color=colour, linewidth=2, linestyle='--')
 
     ax.set_xscale('log')
+    sizes = sorted(df['payload_size'].unique())
+    ax.set_xticks(sizes)
+    ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
+
     ax.set_title('Jitter vs Payload Size: CoAP vs HTTP',
                  fontsize=13, fontweight='bold', pad=12)
     ax.set_xlabel('Payload Size (bytes, log scale)')
@@ -256,20 +300,99 @@ def plot_sweep_jitter(df: pd.DataFrame) -> None:
     ax.legend()
     ax.grid(axis='both', linestyle='--', alpha=0.5)
     ax.set_axisbelow(True)
+    fig.tight_layout()
 
+    ax.autoscale(False)
+    _add_frag_boundary(ax, df)
+
+    save(fig, 'payload_sweep_jitter.png')
+
+
+def plot_sweep_overhead(df: pd.DataFrame) -> None:
+    """Line chart: header overhead in bytes vs payload size per protocol."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for proto, colour in [('CoAP', COLOUR_COAP), ('HTTP', COLOUR_HTTP)]:
+        sub = df[df['protocol'] == proto].sort_values('payload_size')
+        # header overhead = avg_total_bytes - payload_size
+        overhead = sub['avg_total_bytes'] - sub['payload_size']
+        ax.plot(sub['payload_size'], overhead,
+                marker='D', label=proto, color=colour, linewidth=2)
+        for x, y in zip(sub['payload_size'], overhead):
+            ax.annotate(
+                f'{y:.0f}B',
+                (x, y),
+                textcoords='offset points', xytext=(0, 8),
+                ha='center', fontsize=8,
+            )
+
+    ax.set_xscale('log')
     sizes = sorted(df['payload_size'].unique())
     ax.set_xticks(sizes)
     ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
 
+    ax.set_title('Header Overhead vs Payload Size: CoAP vs HTTP',
+                 fontsize=13, fontweight='bold', pad=12)
+    ax.set_xlabel('Payload Size (bytes, log scale)')
+    ax.set_ylabel('Header Overhead (bytes)')
+    ax.legend()
+    ax.grid(axis='both', linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
     fig.tight_layout()
-    save(fig, 'payload_sweep_jitter.png')
+
+    ax.autoscale(False)
+    _add_frag_boundary(ax, df)
+
+    save(fig, 'sweep_overhead.png')
 
 
-def _fmt_bytes(n: int) -> str:
-    """Human-readable byte size label."""
-    if n >= 1024:
-        return f'{n // 1024}KB'
-    return f'{n}B'
+def plot_sweep_crossover(df: pd.DataFrame) -> None:
+    """Line chart: CoAP/HTTP RTT ratio vs payload size.
+
+    Values < 1 mean CoAP is faster; values > 1 mean HTTP is faster.
+    A horizontal line at y=1 marks the crossover point.
+    """
+    coap = df[df['protocol'] == 'CoAP'].set_index('payload_size')['avg_rtt_ms']
+    http = df[df['protocol'] == 'HTTP'].set_index('payload_size')['avg_rtt_ms']
+    common = coap.index.intersection(http.index)
+    ratio = (coap[common] / http[common]).reset_index()
+    ratio.columns = pd.Index(['payload_size', 'ratio'])
+    ratio = ratio.sort_values('payload_size')
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.plot(ratio['payload_size'], ratio['ratio'],
+            marker='o', color='#7B1FA2', linewidth=2, zorder=3)
+    ax.axhline(y=1.0, color='grey', linestyle='--', linewidth=1.2, zorder=2,
+               label='CoAP = HTTP')
+
+    for _, row in ratio.iterrows():
+        ax.annotate(
+            f'{row["ratio"]:.2f}×',
+            (row['payload_size'], row['ratio']),
+            textcoords='offset points', xytext=(0, 9),
+            ha='center', fontsize=8,
+        )
+
+    ax.set_xscale('log')
+    sizes = sorted(ratio['payload_size'].unique())
+    ax.set_xticks(sizes)
+    ax.set_xticklabels([_fmt_bytes(s) for s in sizes], rotation=30, ha='right')
+
+    ax.set_title('CoAP / HTTP RTT Ratio vs Payload Size',
+                 fontsize=13, fontweight='bold', pad=12)
+    ax.set_xlabel('Payload Size (bytes, log scale)')
+    ax.set_ylabel('RTT Ratio (CoAP ÷ HTTP)')
+    ax.legend()
+    ax.grid(axis='both', linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+
+    ax.autoscale(False)
+    _add_frag_boundary(ax, df)
+
+    save(fig, 'sweep_crossover.png')
+
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -298,6 +421,8 @@ def main() -> None:
         print('  Sweep summary found — generating sweep charts...')
         plot_sweep_rtt(sweep_df)
         plot_sweep_jitter(sweep_df)
+        plot_sweep_overhead(sweep_df)
+        plot_sweep_crossover(sweep_df)
     else:
         print('  (No payload sweep data found — skipping sweep charts.)')
 

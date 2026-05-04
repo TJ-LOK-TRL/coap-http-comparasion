@@ -1,0 +1,162 @@
+================================================================
+  CoAP vs HTTP — BENCHMARK REPORT
+  (Text version — suitable for LLM analysis)
+================================================================
+
+SECTION 1 — OVERVIEW
+────────────────────────────────────────────────────────────────
+  Total requests  : 200
+  Successful (ok) : 200
+  Failed / errors : 0
+
+  CoAP samples : 100
+  HTTP samples : 100
+
+SECTION 2 — LATENCY (RTT)
+────────────────────────────────────────────────────────────────
+  All values in milliseconds.
+
+  Protocol    Mean        Median      Min         Max         Std Dev   
+  --------    ----        ------      ---         ---         -------   
+  CoAP        7.876       7.738       6.188       17.344      1.764     
+  HTTP        7.181       6.470       6.124       17.150      1.692     
+
+  → HTTP is faster than CoAP by 1.10× (mean RTT: CoAP 7.876 ms vs HTTP 7.181 ms)
+
+SECTION 3 — PACKET SIZE
+────────────────────────────────────────────────────────────────
+  Protocol    Avg Payload (B)   Avg Header (B)    Avg Total (B)     Header %      
+  --------    ---------------   --------------    -------------     --------      
+  CoAP        118.0             9.0               127.0             7.1%          
+  HTTP        118.0             160.0             278.0             57.6%         
+
+  → CoAP header overhead : 9.0 B
+  → HTTP header overhead : 160.0 B
+  → HTTP adds 151.0 B more header per request (17.78× CoAP)
+
+SECTION 4 — RTT DISTRIBUTION (PERCENTILES)
+────────────────────────────────────────────────────────────────
+  Percentile values in milliseconds.
+
+  Protocol    p10       p25       p50       p75       p90       p95       p99     
+  --------    ---       ---       ---       ---       ---       ---       ---     
+  CoAP        6.379     6.433     7.738     8.617     10.490    10.783    11.629  
+  HTTP        6.404     6.447     6.470     7.303     8.611     9.297     14.840  
+
+  CoAP IQR (p25–p75): 2.183 ms
+  HTTP IQR (p25–p75): 0.857 ms
+
+SECTION 5 — JITTER
+────────────────────────────────────────────────────────────────
+  Jitter = mean absolute difference between consecutive RTTs (RFC 3550).
+
+  Protocol    Jitter (ms)   
+  --------    -----------   
+  CoAP        1.6029        
+  HTTP        0.8046        
+
+  → HTTP has lower jitter (0.8046 ms vs 1.6029 ms), meaning more consistent latency.
+
+SECTION 6 — PAYLOAD SWEEP: AVG RTT vs PAYLOAD SIZE
+────────────────────────────────────────────────────────────────
+  Avg RTT ± Std Dev in milliseconds for each payload size.
+  Note: UDP MTU fragmentation boundary at 1500 B.
+
+  Size        CoAP avg RTT ± σ    HTTP avg RTT ± σ  
+  ----        ----------------    ----------------  
+  64B         8.19 ± 2.32         7.92 ± 2.70       
+  256B        8.75 ± 1.60         12.14 ± 42.75     
+  512B        11.07 ± 11.38       8.56 ± 5.22       
+  1KB         9.57 ± 1.36         8.51 ± 3.19       
+  2KB         19.80 ± 11.05       14.93 ± 44.09      ← above MTU
+  4KB         38.26 ± 6.88        10.78 ± 2.43       ← above MTU
+  8KB         80.17 ± 18.36       12.91 ± 10.89      ← above MTU
+  16KB        158.68 ± 21.38      14.51 ± 2.71       ← above MTU
+  64KB        791.19 ± 529.33     38.60 ± 6.76       ← above MTU
+
+SECTION 7 — PAYLOAD SWEEP: JITTER vs PAYLOAD SIZE
+────────────────────────────────────────────────────────────────
+  Jitter in milliseconds.
+
+  Size        CoAP jitter     HTTP jitter   
+  ----        -----------     -----------   
+  64B         1.9190          1.9010        
+  256B        1.4700          11.0480       
+  512B        5.2900          2.9990        
+  1KB         1.6030          1.9570        
+  2KB         5.2910          11.5770       
+  4KB         5.0200          2.4770        
+  8KB         12.6810         5.4050        
+  16KB        15.4660         2.1160        
+  64KB        258.8260        5.9170        
+
+SECTION 8 — PAYLOAD SWEEP: HEADER OVERHEAD vs PAYLOAD SIZE
+────────────────────────────────────────────────────────────────
+  Header overhead = avg_total_bytes - payload_size (in bytes).
+
+  Size        CoAP overhead     HTTP overhead     Difference (H−C)  
+  ----        -------------     -------------     ----------------  
+  64B         9.0 B             152.0 B           143.0 B           
+  256B        9.0 B             153.0 B           144.0 B           
+  512B        9.0 B             153.0 B           144.0 B           
+  1KB         9.0 B             154.0 B           145.0 B           
+  2KB         11.0 B            154.0 B           143.0 B           
+  4KB         11.0 B            154.0 B           143.0 B           
+  8KB         11.0 B            154.0 B           143.0 B           
+  16KB        11.0 B            155.0 B           144.0 B           
+  64KB        12.0 B            155.0 B           143.0 B           
+
+SECTION 9 — PAYLOAD SWEEP: CoAP/HTTP RTT RATIO vs PAYLOAD SIZE
+────────────────────────────────────────────────────────────────
+  Ratio = CoAP avg RTT ÷ HTTP avg RTT.
+  Ratio < 1.00 → CoAP is faster.
+  Ratio > 1.00 → HTTP is faster.
+
+  Size        CoAP (ms)     HTTP (ms)     Ratio         Faster protocol     
+  ----        ---------     ---------     -----         ---------------     
+  64B         8.189         7.919         1.034×        HTTP                
+  256B        8.753         12.142        0.721×        CoAP                
+  512B        11.067        8.560         1.293×        HTTP                
+  1KB         9.573         8.506         1.125×        HTTP                
+  2KB         19.802        14.933        1.326×        HTTP                
+  4KB         38.262        10.778        3.550×        HTTP                
+  8KB         80.172        12.908        6.211×        HTTP                
+  16KB        158.678       14.507        10.938×       HTTP                
+  64KB        791.192       38.599        20.498×       HTTP                
+
+  → Crossover detected near 256B: advantage switches around this payload size.
+  → Crossover detected near 512B: advantage switches around this payload size.
+
+SECTION 10 — SUMMARY & KEY TAKEAWAYS
+────────────────────────────────────────────────────────────────
+  Latency:
+    CoAP mean RTT = 7.876 ms
+    HTTP mean RTT = 7.181 ms
+    → HTTP wins on latency (7.181 vs 7.876 ms)
+
+  Bandwidth:
+    CoAP avg total bytes = 127.0 B
+    HTTP avg total bytes = 278.0 B
+    → CoAP uses less bandwidth per request (127.0 vs 278.0 B)
+
+  Jitter:
+    CoAP jitter = 1.6029 ms
+    HTTP jitter = 0.8046 ms
+    → HTTP has more consistent latency
+
+  Payload Sweep Insights:
+    64B: HTTP 1.03× faster
+    256B: CoAP 1.39× faster
+    512B: HTTP 1.29× faster
+    1KB: HTTP 1.13× faster
+    2KB [above MTU]: HTTP 1.33× faster
+    4KB [above MTU]: HTTP 3.55× faster
+    8KB [above MTU]: HTTP 6.21× faster
+    16KB [above MTU]: HTTP 10.94× faster
+    64KB [above MTU]: HTTP 20.50× faster
+
+    UDP MTU fragmentation boundary = 1500 B
+
+================================================================
+  END OF REPORT
+================================================================
